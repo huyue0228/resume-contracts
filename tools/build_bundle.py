@@ -1,0 +1,51 @@
+"""机械生成协议分发物；--check 只验证，不写入。"""
+import argparse
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+from resume_contracts import VERSION
+from resume_contracts.models import AnalysisRequestV1,AnalysisResponseV1
+from resume_contracts.fixtures import request_fixture,response_fixture
+
+
+def render(value):return (json.dumps(value,ensure_ascii=False,sort_keys=True,indent=2)+"\n").encode()
+
+
+def bundle():
+    result={"request.schema.json":render(AnalysisRequestV1.model_json_schema()),"response.schema.json":render(AnalysisResponseV1.model_json_schema()),
+            "request.example.json":render(request_fixture().model_dump(mode="json")),"response.example.json":render(response_fixture())}
+    sdk={path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in (ROOT/"resume_contracts").glob("*.py")}
+    result["manifest.json"]=render(dict(version=VERSION,files={name:hashlib.sha256(raw).hexdigest() for name,raw in result.items()},python=sdk))
+    return result
+
+
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--check",action="store_true")
+    parser.add_argument("--platform",type=Path)
+    parser.add_argument("--kernel",type=Path)
+    args=parser.parse_args()
+    destinations=[ROOT/"resume_contracts"/"bundle"]
+    if args.platform:destinations.append(args.platform/"backend"/"resume_contracts"/"bundle")
+    if args.kernel:destinations.append(args.kernel/"internal"/"contract"/"bundle")
+    for destination in destinations:
+        for name,raw in bundle().items():
+            path=destination/name
+            if args.check:
+                if not path.exists() or path.read_bytes()!=raw:raise SystemExit(f"contract drift: {path}")
+            else:
+                path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(raw)
+    if args.platform:
+        for source in (ROOT/"resume_contracts").glob("*.py"):
+            path=args.platform/"backend"/"resume_contracts"/source.name
+            if args.check:
+                if not path.exists() or path.read_bytes()!=source.read_bytes():raise SystemExit(f"SDK drift: {path}")
+            else:path.write_bytes(source.read_bytes())
+    print("Contract bundle verified" if args.check else "Contract bundle generated")
+
+
+if __name__=="__main__":main()

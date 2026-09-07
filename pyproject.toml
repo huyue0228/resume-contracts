@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "resume-contracts"
+version = "1.0.0"
+requires-python = ">=3.9"
+dependencies = ["pydantic>=2.9,<3"]
+
+[project.scripts]
+resume-kernel-mock = "resume_contracts.mock_server:main"
+
+[tool.setuptools.package-data]
+resume_contracts = ["bundle/*.json"]
