@@ -14,6 +14,29 @@ sys.path.insert(0, str(ROOT))
 from resume_contracts import VERSION
 
 
+def verify_wheel(wheel):
+    with tempfile.TemporaryDirectory(prefix="resume-contract-wheel-") as temporary:
+        venv = Path(temporary) / "venv"
+        subprocess.run([sys.executable, "-m", "venv", "--system-site-packages", str(venv)], check=True)
+        python = venv / "bin/python"
+        environment = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        # CI 已安装同版本 SDK；继承的包只能供应依赖，不能代替待验证 wheel。
+        # ignore-installed 不卸载父环境的包，并确保在子环境生成 console script。
+        subprocess.run([
+            str(python), "-m", "pip", "install", "--ignore-installed",
+            "--no-deps", "--no-index", str(wheel),
+        ], cwd=temporary, env=environment, check=True)
+        subprocess.run([
+            str(python), "-c",
+            "from pathlib import Path; import sys, resume_contracts; "
+            "source = Path(resume_contracts.__file__).resolve(); "
+            "prefix = Path(sys.prefix).resolve(); "
+            "source.relative_to(prefix)",
+        ], cwd=temporary, env=environment, check=True)
+        subprocess.run([str(python), "-m", "resume_contracts.verify"], cwd=temporary, env=environment, check=True)
+        subprocess.run([str(venv / "bin/resume-kernel-mock"), "--help"], cwd=temporary, env=environment, check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", default="")
@@ -33,14 +56,7 @@ def main():
         metadata = Parser().parsestr(archive.read(metadata_path).decode())
         if metadata["Version"] != VERSION:
             raise SystemExit("pyproject 包版本与 SDK VERSION 不一致")
-    with tempfile.TemporaryDirectory(prefix="resume-contract-wheel-") as temporary:
-        venv = Path(temporary) / "venv"
-        subprocess.run([sys.executable, "-m", "venv", "--system-site-packages", str(venv)], check=True)
-        python = venv / "bin/python"
-        subprocess.run([str(python), "-m", "pip", "install", "--no-deps", "--no-index", str(wheels[0])], cwd=temporary, check=True)
-        environment = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-        subprocess.run([str(python), "-m", "resume_contracts.verify"], cwd=temporary, env=environment, check=True)
-        subprocess.run([str(venv / "bin/resume-kernel-mock"), "--help"], cwd=temporary, env=environment, check=True)
+    verify_wheel(wheels[0])
     files = sorted(p for p in output.iterdir() if p.suffix == ".whl" or p.name.endswith(".tar.gz"))
     (output / "SHA256SUMS").write_text("".join(hashlib.sha256(p.read_bytes()).hexdigest() + "  " + p.name + "\n" for p in files))
     print(output)
