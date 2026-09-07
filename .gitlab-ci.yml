@@ -1,0 +1,20 @@
+stages: [check, package]
+variables:
+  PYTHON_CI_IMAGE: "python:3.12"
+contract:
+  stage: check
+  image: $PYTHON_CI_IMAGE
+  script:
+    - pip install .
+    - make check PYTHON=python
+distribution:
+  stage: package
+  image: $PYTHON_CI_IMAGE
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/'
+      when: manual
+  script:
+    - pip install . build "setuptools>=68" wheel
+    - make package PYTHON=python RELEASE_VERSION="$CI_COMMIT_TAG"
+  artifacts:
+    paths: [dist/]

@@ -1,6 +1,6 @@
 # Resume Contracts
 
-业务平台和简历分析引擎之间的公开契约，版本 1.0.0。
+业务平台和简历分析引擎之间的公开契约，版本 1.1.0。
 
 ```sh
 python3 -m venv .venv
@@ -30,8 +30,19 @@ make bundle PYTHON=.venv/bin/python
 支持 `--scenario success|low_match|failed|budget_exhausted|timeout|invalid_reference|incomplete|invalid_schema`。
 所有结果标记 `MOCK_ONLY`，只用于脱敏开发环境；没有真实匹配含义。服务不读取文件、不访问模型或数据库。请求格式验证不等于语义验收：覆盖不足和引用越界必须由平台拒绝。
 
+## 版本边界
+
+认证的 `GET /v2/capabilities` 描述 Kernel 的公开协议、任务种类、build、工具集和指令版本。
+协议仓只固定公开协议、结果结构与评分语义；内部版本为非空不透明引用，不使用枚举。
+平台发现后冻结 pin；Kernel 必须拒绝与实际 build/工具/指令不符的执行请求（409），而非静默升级任务。
+平台独立拥有 policy_version。内部工具/指令更新无需同步协议仓；公开结构或评分语义变化才走双方验收。
+
 ## 发布
 
-私有仓：`https://github.com/huyue0228/resume-contracts`。PR 必须通过独立契约检查；协议变更由平台和 Kernel 双方评审，当前负责人为 `@huyue0228`。
-手动执行 Release 工作流只构建演练产物。维护者在 main 已合并提交上推送与包版本完全一致的 `vX.Y.Z` 标签，才自动发布 GitHub Release（wheel、sdist、SHA256SUMS）；不发布到 PyPI，不覆盖旧版本。发布测试还会在隔离环境安装 wheel，验证 Schema 与模拟服务可用。
-消费者升级通过 PR 同步固定版本；不自动覆盖两个仓的文件，也不需要跨仓 Actions 写令牌。
+先安装 `build setuptools>=68 wheel`，再执行 `make check package RELEASE_VERSION=v1.1.0`。
+仓库脚本生成 wheel/sdist、SHA256SUMS，并在仓库外的临时环境离线安装 wheel 验证。
+产物在 `dist/v1.1.0/`，拒绝覆盖已有目录。构建依赖由运行环境预置，脚本不下载它们。
+GitLab 与 GitHub 都只调用这些入口；内网通过 pip 镜像源供应依赖即可。
+
+消费者升级通过合并请求同步固定副本；普通消费者构建不检出协议仓、不自动覆盖兄弟仓。
+公开协议升级先发布本仓，再升级两个消费者并验收选定的版本组合；不兼容旧 AI 任务。

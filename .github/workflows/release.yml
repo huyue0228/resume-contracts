@@ -29,32 +29,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-          python -m pip install . build
-          python - <<'PY'
-          import os, tomllib
-          from resume_contracts import VERSION
-          from pathlib import Path
-          assert VERSION == tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
-          if os.environ["GITHUB_REF"].startswith("refs/tags/"):
-              assert os.environ["GITHUB_ACTOR"] == os.environ["GITHUB_REPOSITORY_OWNER"]
-              assert os.environ["GITHUB_REF_NAME"] == "v" + VERSION
-          PY
+          python -m pip install . build "setuptools>=68" wheel
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            [[ "$GITHUB_ACTOR" == "$GITHUB_REPOSITORY_OWNER" ]]
+            echo "RELEASE_VERSION=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          fi
           if [[ "$GITHUB_REF" == refs/tags/* ]] && gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             echo "Version already released; use a new version"; exit 1
           fi
-      - name: Build and test installed distributions
-        run: |
-          python -m build
-          python -m venv /tmp/contracts-wheel
-          /tmp/contracts-wheel/bin/pip install dist/*.whl
-          cd /tmp
-          /tmp/contracts-wheel/bin/python -m resume_contracts.verify
-          /tmp/contracts-wheel/bin/resume-kernel-mock --help
-      - name: Check distribution checksums
-        run: |
-          cd dist
-          sha256sum *.whl *.tar.gz > SHA256SUMS
-          sha256sum -c SHA256SUMS
+      - name: Build, install-smoke and checksum
+        run: make package PYTHON=python RELEASE_VERSION="$RELEASE_VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: contract-distributions
@@ -67,4 +51,4 @@ jobs:
         run: |
           args=()
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then args+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes "${args[@]}"
+          gh release create "$GITHUB_REF_NAME" dist/v*/* --verify-tag --generate-notes "${args[@]}"

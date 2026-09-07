@@ -8,8 +8,8 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from resume_contracts import VERSION
-from resume_contracts.models import AnalysisRequestV1,AnalysisResponseV1
-from resume_contracts.fixtures import request_fixture,response_fixture
+from resume_contracts.models import AnalysisRequestV1,AnalysisResponseV1,KernelCapabilitiesV1
+from resume_contracts.fixtures import request_fixture,response_fixture,capabilities_fixture
 
 
 def render(value):return (json.dumps(value,ensure_ascii=False,sort_keys=True,indent=2)+"\n").encode()
@@ -17,7 +17,9 @@ def render(value):return (json.dumps(value,ensure_ascii=False,sort_keys=True,ind
 
 def bundle():
     result={"request.schema.json":render(AnalysisRequestV1.model_json_schema()),"response.schema.json":render(AnalysisResponseV1.model_json_schema()),
-            "request.example.json":render(request_fixture().model_dump(mode="json")),"response.example.json":render(response_fixture())}
+            "request.example.json":render(request_fixture().model_dump(mode="json")),"response.example.json":render(response_fixture()),
+            "capabilities.schema.json":render(KernelCapabilitiesV1.model_json_schema()),
+            "capabilities.example.json":render(capabilities_fixture().model_dump(mode="json"))}
     sdk={path.name:hashlib.sha256(path.read_bytes()).hexdigest() for path in (ROOT/"resume_contracts").glob("*.py")}
     result["manifest.json"]=render(dict(version=VERSION,files={name:hashlib.sha256(raw).hexdigest() for name,raw in result.items()},python=sdk))
     return result
