@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from resume_contracts import VERSION
-from resume_contracts.models import AnalysisRequestV1,AnalysisResponseV1,KernelCapabilitiesV1
+from resume_contracts.models import AnalysisRequestV2,AnalysisResponseV2,KernelCapabilitiesV1
 from resume_contracts.fixtures import request_fixture,response_fixture,capabilities_fixture
 
 
@@ -16,7 +16,7 @@ def render(value):return (json.dumps(value,ensure_ascii=False,sort_keys=True,ind
 
 
 def bundle():
-    result={"request.schema.json":render(AnalysisRequestV1.model_json_schema()),"response.schema.json":render(AnalysisResponseV1.model_json_schema()),
+    result={"request.schema.json":render(AnalysisRequestV2.model_json_schema()),"response.schema.json":render(AnalysisResponseV2.model_json_schema()),
             "request.example.json":render(request_fixture().model_dump(mode="json")),"response.example.json":render(response_fixture()),
             "capabilities.schema.json":render(KernelCapabilitiesV1.model_json_schema()),
             "capabilities.example.json":render(capabilities_fixture().model_dump(mode="json"))}
@@ -32,7 +32,8 @@ def main():
     parser.add_argument("--kernel",type=Path)
     args=parser.parse_args()
     destinations=[ROOT/"resume_contracts"/"bundle"]
-    if args.platform:destinations.append(args.platform/"backend"/"resume_contracts"/"bundle")
+    if args.platform:
+        destinations.append(args.platform/"internal"/"contract"/"bundle")
     if args.kernel:destinations.append(args.kernel/"internal"/"contract"/"bundle")
     for destination in destinations:
         for name,raw in bundle().items():
@@ -41,12 +42,6 @@ def main():
                 if not path.exists() or path.read_bytes()!=raw:raise SystemExit(f"contract drift: {path}")
             else:
                 path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(raw)
-    if args.platform:
-        for source in (ROOT/"resume_contracts").glob("*.py"):
-            path=args.platform/"backend"/"resume_contracts"/source.name
-            if args.check:
-                if not path.exists() or path.read_bytes()!=source.read_bytes():raise SystemExit(f"SDK drift: {path}")
-            else:path.write_bytes(source.read_bytes())
     print("Contract bundle verified" if args.check else "Contract bundle generated")
 
 

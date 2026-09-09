@@ -1,11 +1,15 @@
 """简历分析公开协议。这里不定义招聘准入或业务动作。"""
+import hashlib
 from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from typing_extensions import Annotated
 
-PROTOCOL = "resume-analysis/v1"
+PROTOCOL = "resume-analysis/v2"
+MAX_REQUEST_BYTES = 2 * 1024 * 1024
+MAX_TEXT_BYTES = 1024 * 1024
+MAX_PAGES = 100
 RESULT = "resume-job-match/v1"
 VersionRef = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 SCORE_WEIGHTS = {"major_match": .30, "skills_match": .20, "experience_evidence": .25,
@@ -42,7 +46,6 @@ class TaskBudgetV1(StrictModel):
     max_turns: int = Field(default=32, ge=1, le=64)
     max_tool_calls: int = Field(default=256, ge=1, le=512)
     max_duration_seconds: int = Field(default=600, ge=1, le=1800)
-    max_ocr_pages: int = Field(default=30, ge=1, le=100)
     max_tokens: int = Field(default=120000, ge=1, le=1000000)
 
 
@@ -56,13 +59,39 @@ class ModelConfigV1(StrictModel):
     insecure_skip_verify: bool = False
 
 
-class ArtifactV1(StrictModel):
-    path: str = Field(min_length=1, max_length=1024)
-    checksum: str = Field(pattern=r"^[a-f0-9]{64}$")
-    media_type: Literal["application/pdf"] = "application/pdf"
-    size_bytes: int = Field(gt=0, le=33554432)
-    expires_at: int = Field(gt=0)
-    signature: str = Field(pattern=r"^[a-f0-9]{64}$")
+class ResumeTextV2(StrictModel):
+    """唯一正文是 pages。页号从 1 开始；每页按 LF 分行，空页也占一行。
+
+    CRLF/CR 在提取端统一为 LF，其余空白和末尾 LF 保留，不做 Unicode
+    改写。全文仅在使用时以 FF 连接各页，UTF-8 编码后计算 text_sha256。
+    """
+    file_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    text_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    extractor_version: VersionRef
+    pages: list[str] = Field(min_length=1, max_length=MAX_PAGES)
+    status: Literal["ready", "needs_attention"]
+    warnings: list[str] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def canonical_text(self):
+        if any(any(char in page for char in ("\r", "\f", "\x00")) for page in self.pages):
+            raise ValueError("pages must contain canonical LF text without FF or NUL")
+        raw = self.full_text().encode("utf-8")
+        if len(raw) > MAX_TEXT_BYTES:
+            raise ValueError("resume text exceeds byte limit")
+        if hashlib.sha256(raw).hexdigest() != self.text_sha256:
+            raise ValueError("resume text checksum mismatch")
+        if self.status == "ready" and not any(page.strip() for page in self.pages):
+            raise ValueError("ready text must not be empty")
+        if self.status == "needs_attention" and not self.warnings:
+            raise ValueError("incomplete text requires a quality warning")
+        return self
+
+    def full_text(self):
+        return "\f".join(self.pages)
+
+    def lines(self):
+        return [(page + 1, line) for page, text in enumerate(self.pages) for line in text.split("\n")]
 
 
 class CandidateContextV1(StrictModel):
@@ -93,10 +122,10 @@ class MajorAliasV1(StrictModel):
     match_type: str
 
 
-class AnalysisScopeV1(StrictModel):
+class AnalysisScopeV2(StrictModel):
     candidate: CandidateContextV1
     volunteer_ref: str = Field(min_length=1, max_length=128)
-    artifact: ArtifactV1
+    resume_text: ResumeTextV2
     jobs: list[JobRequirementV1] = Field(min_length=1, max_length=2000)
     taxonomy: list[MajorAliasV1] = Field(default_factory=list)
 
@@ -107,7 +136,7 @@ class AnalysisScopeV1(StrictModel):
         return self
 
 
-class AnalysisRequestV1(StrictModel):
+class AnalysisRequestV2(StrictModel):
     protocol_version: Literal[PROTOCOL] = PROTOCOL
     task_kind: Literal["candidate.resume_job_match"] = "candidate.resume_job_match"
     task_id: str = Field(min_length=1, max_length=128)
@@ -115,7 +144,7 @@ class AnalysisRequestV1(StrictModel):
     trigger: str = "processing_run"
     workflow_revision: int = Field(ge=0)
     pin: TaskPinV1
-    scope: AnalysisScopeV1
+    scope: AnalysisScopeV2
     model: ModelConfigV1
     budget: TaskBudgetV1 = Field(default_factory=TaskBudgetV1)
 
@@ -201,7 +230,7 @@ class TaskSafeTraceV1(StrictModel):
     status: str = Field(default="", max_length=32)
 
 
-class AnalysisResponseV1(StrictModel):
+class AnalysisResponseV2(StrictModel):
     protocol_version: Literal[PROTOCOL] = PROTOCOL
     task_id: str
     idempotency_key: str

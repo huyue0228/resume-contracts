@@ -1,6 +1,6 @@
 # Resume Contracts
 
-业务平台和简历分析引擎之间的公开契约，版本 1.1.0。
+业务平台和简历分析引擎之间的公开契约，版本 2.0.0。
 
 ```sh
 python3 -m venv .venv
@@ -9,7 +9,7 @@ make check PYTHON=.venv/bin/python
 ```
 
 权威定义为 `resume_contracts/models.py`，机械生成的 JSON Schema、合成输入输出和摘要在 `resume_contracts/bundle/`。
-协议为 `resume-analysis/v1`，HTTP 入口为 `POST /v2/tasks/execute`。请求只携带已准入范围，不携带历史志愿、学校规则或 HC；结果不包含业务动作。
+协议为 `resume-analysis/v2`，HTTP 入口为 `POST /v2/tasks/execute`。请求只携带已准入范围，不携带历史志愿、学校规则或 HC；结果不包含业务动作。
 
 维护者修改模型后先升级版本，再运行：
 
@@ -39,10 +39,14 @@ make bundle PYTHON=.venv/bin/python
 
 ## 发布
 
-先安装 `build setuptools>=68 wheel`，再执行 `make check package RELEASE_VERSION=v1.1.0`。
+先安装 `build setuptools>=68 wheel`，再执行 `make check package RELEASE_VERSION=v2.0.0`。
 仓库脚本生成 wheel/sdist、SHA256SUMS，并在仓库外的临时环境离线安装 wheel 验证。
-产物在 `dist/v1.1.0/`，拒绝覆盖已有目录。构建依赖由运行环境预置，脚本不下载它们。
+产物在 `dist/v2.0.0/`，拒绝覆盖已有目录。构建依赖由运行环境预置，脚本不下载它们。
 GitLab 与 GitHub 都只调用这些入口；内网通过 pip 镜像源供应依赖即可。
 
 消费者升级通过合并请求同步固定副本；普通消费者构建不检出协议仓、不自动覆盖兄弟仓。
 公开协议升级先发布本仓，再升级两个消费者并验收选定的版本组合；不兼容旧 AI 任务。
+
+文本输入使用原文件 SHA256、文本 SHA256、提取器版本、按页完整文本、提取状态与质量提示。页内仅使用 LF；页间按 FF 拼接计算文本校验值，空白页保留一个空行，行号跨页连续。全文上限 1 MiB，HTTP 请求包含岗位和 JSON 编码后上限 2 MiB；不支持旧签名 PDF 输入。
+
+`--platform` 和 `--kernel` 均只分发 Go 消费者的 `internal/contract/bundle`，不再生成旧 Django 后端目录。Python DTO 和模拟服务仅由本协议仓发行。Git 标签记录版本；GitHub 分发物回下载校验后不保留本地 release 或源码备份。

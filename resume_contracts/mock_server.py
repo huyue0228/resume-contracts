@@ -6,7 +6,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .fixtures import response_fixture, capabilities_fixture
-from .models import AnalysisRequestV1
+from .models import AnalysisRequestV2
 
 
 def main():
@@ -35,7 +35,7 @@ def main():
             try:
                 size=int(self.headers.get("Content-Length","0"))
                 if size<1 or size>2<<20:return self.reply(413,{})
-                request=AnalysisRequestV1.model_validate_json(self.rfile.read(size))
+                request=AnalysisRequestV2.model_validate_json(self.rfile.read(size))
             except (ValueError,TypeError):return self.reply(422,{"code":"invalid_envelope"})
             if any(getattr(request.pin,key)!=getattr(capabilities,key) for key in ("kernel_build","toolset_version","instruction_version")):
                 return self.reply(409,{"code":"kernel_version_unavailable"})
