@@ -6,11 +6,11 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from typing_extensions import Annotated
 
-PROTOCOL = "resume-analysis/v2"
+PROTOCOL = "resume-analysis/v3"
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
 MAX_TEXT_BYTES = 1024 * 1024
 MAX_PAGES = 100
-RESULT = "resume-job-match/v1"
+RESULT = "resume-application-assessment/v1"
 VersionRef = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 SCORE_WEIGHTS = {"major_match": .30, "skills_match": .20, "experience_evidence": .25,
                  "job_requirement": .15, "resume_quality": .10}
@@ -35,7 +35,7 @@ class KernelCapabilitiesV1(StrictModel):
     """公开兼容性固定；内部版本由内核声明，提交任务后必须精确执行冻结版本。"""
     protocol_version: Literal[PROTOCOL] = PROTOCOL
     result_schema_version: Literal[RESULT] = RESULT
-    task_kinds: list[Literal["candidate.resume_job_match"]] = Field(min_length=1)
+    task_kinds: list[Literal["candidate.application_assessment"]] = Field(min_length=1)
     kernel_build: VersionRef
     toolset_version: VersionRef
     instruction_version: VersionRef
@@ -122,29 +122,40 @@ class MajorAliasV1(StrictModel):
     match_type: str
 
 
-class AnalysisScopeV2(StrictModel):
+class AbilityTagV1(StrictModel):
+    code: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    name: str = Field(min_length=1, max_length=100)
+    category: Literal["direction", "skill", "experience"]
+    description: str = Field(min_length=1, max_length=1000)
+
+
+class AnalysisScopeV3(StrictModel):
     candidate: CandidateContextV1
     volunteer_ref: str = Field(min_length=1, max_length=128)
     resume_text: ResumeTextV2
-    jobs: list[JobRequirementV1] = Field(min_length=1, max_length=2000)
+    # Exactly one application standard, independent of department demand and HC.
+    jobs: list[JobRequirementV1] = Field(min_length=1, max_length=1)
     taxonomy: list[MajorAliasV1] = Field(default_factory=list)
+    tag_catalog: list[AbilityTagV1] = Field(default_factory=list, max_length=200)
 
     @model_validator(mode="after")
     def unique_jobs(self):
         if len({job.ref for job in self.jobs}) != len(self.jobs):
             raise ValueError("duplicate job reference")
+        if len({tag.code for tag in self.tag_catalog}) != len(self.tag_catalog):
+            raise ValueError("duplicate tag code")
         return self
 
 
-class AnalysisRequestV2(StrictModel):
+class AnalysisRequestV3(StrictModel):
     protocol_version: Literal[PROTOCOL] = PROTOCOL
-    task_kind: Literal["candidate.resume_job_match"] = "candidate.resume_job_match"
+    task_kind: Literal["candidate.application_assessment"] = "candidate.application_assessment"
     task_id: str = Field(min_length=1, max_length=128)
     idempotency_key: str = Field(min_length=1, max_length=256)
     trigger: str = "processing_run"
     workflow_revision: int = Field(ge=0)
     pin: TaskPinV1
-    scope: AnalysisScopeV2
+    scope: AnalysisScopeV3
     model: ModelConfigV1
     budget: TaskBudgetV1 = Field(default_factory=TaskBudgetV1)
 
@@ -177,6 +188,14 @@ class CandidateProfileV1(StrictModel):
     source_text: str = Field(default="", max_length=1000000)
     claims: list[ClaimV1] = Field(min_length=1)
     risks: list[str]
+    tags: list["TagAssertionV1"] = Field(default_factory=list, max_length=200)
+
+
+class TagAssertionV1(StrictModel):
+    code: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    confidence: float = Field(ge=0, le=1)
+    status: Literal["supported", "needs_verification"]
+    evidence: list[EvidenceV1] = Field(min_length=1)
 
 
 class ScoreBreakdown(StrictModel):
@@ -230,13 +249,13 @@ class TaskSafeTraceV1(StrictModel):
     status: str = Field(default="", max_length=32)
 
 
-class AnalysisResponseV2(StrictModel):
+class AnalysisResponseV3(StrictModel):
     protocol_version: Literal[PROTOCOL] = PROTOCOL
     task_id: str
     idempotency_key: str
     pin: TaskPinV1
     workflow_revision: int = Field(ge=0)
     profile: Optional[CandidateProfileV1] = None
-    matches: list[JobMatchV1]
+    matches: list[JobMatchV1] = Field(max_length=1)
     manifest: TaskManifestV1
     safe_trace: TaskSafeTraceV1

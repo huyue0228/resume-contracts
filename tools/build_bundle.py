@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from resume_contracts import VERSION
-from resume_contracts.models import AnalysisRequestV2,AnalysisResponseV2,KernelCapabilitiesV1
+from resume_contracts.models import AnalysisRequestV3,AnalysisResponseV3,KernelCapabilitiesV1
 from resume_contracts.fixtures import request_fixture,response_fixture,capabilities_fixture
 
 
@@ -16,7 +16,7 @@ def render(value):return (json.dumps(value,ensure_ascii=False,sort_keys=True,ind
 
 
 def bundle():
-    result={"request.schema.json":render(AnalysisRequestV2.model_json_schema()),"response.schema.json":render(AnalysisResponseV2.model_json_schema()),
+    result={"request.schema.json":render(AnalysisRequestV3.model_json_schema()),"response.schema.json":render(AnalysisResponseV3.model_json_schema()),
             "request.example.json":render(request_fixture().model_dump(mode="json")),"response.example.json":render(response_fixture()),
             "capabilities.schema.json":render(KernelCapabilitiesV1.model_json_schema()),
             "capabilities.example.json":render(capabilities_fixture().model_dump(mode="json"))}

@@ -2,21 +2,21 @@
 import hashlib
 import json
 
-from .models import AnalysisRequestV2, AnalysisResponseV2, KernelCapabilitiesV1, PROTOCOL, SCORE_WEIGHTS
+from .models import AnalysisRequestV3, AnalysisResponseV3, KernelCapabilitiesV1, PROTOCOL, SCORE_WEIGHTS
 
 TEXT = "负责后端服务开发与测试工作，完成接口设计和自动化测试。\n" * 20
 
 
 def capabilities_fixture(**overrides):
     values = dict(
-        task_kinds=["candidate.resume_job_match"], kernel_build="dev",
+        task_kinds=["candidate.application_assessment"], kernel_build="dev",
         toolset_version="fixture-tools/v1", instruction_version="fixture-instructions/v1")
     values.update(overrides)
     return KernelCapabilitiesV1.model_validate(values)
 
 
 def request_fixture():
-    return AnalysisRequestV2.model_validate(dict(task_id="fixture-task", idempotency_key="fixture-key", workflow_revision=1,
+    return AnalysisRequestV3.model_validate(dict(task_id="fixture-task", idempotency_key="fixture-key", workflow_revision=1,
         pin=dict(pin_id="fixture-pin", kernel_build="dev", model_config_revision="fixture-model",
                  toolset_version="fixture-tools/v1", instruction_version="fixture-instructions/v1",
                  policy_version="fixture-policy/v1"),
@@ -26,7 +26,7 @@ def request_fixture():
                 text_sha256=hashlib.sha256(TEXT.encode()).hexdigest(), extractor_version="fixture/v2",
                 pages=[TEXT], status="ready", warnings=[]),
             jobs=[dict(ref=ref, content_hash="c"*64, position_name="软件开发", responsibilities="服务开发与测试",
-                       department_ref="department-fixture", department_name="示例部门") for ref in ("job-a", "job-b")])) )
+                       department_ref="department-fixture", department_name="示例部门") for ref in ("job-a",)])) )
 
 
 def response_fixture(request=None, scenario="success"):
@@ -45,7 +45,7 @@ def response_fixture(request=None, scenario="success"):
     if scenario in {"failed", "budget_exhausted"}:
         data.update(profile=None,matches=[])
         data["manifest"].update(terminal_state="FAILED",covered_jobs=[],failure_code=scenario)
-    result=AnalysisResponseV2.model_validate(data).model_dump(mode="json")
+    result=AnalysisResponseV3.model_validate(data).model_dump(mode="json")
     if scenario == "invalid_reference": result["matches"][0]["job_ref"]="outside-allowed-pool"
     if scenario == "incomplete": result["matches"]=result["matches"][:-1]
     if scenario == "invalid_schema": result["recommendation"]="dispatch"

@@ -1,32 +1,47 @@
 import unittest
 from pydantic import ValidationError
 from resume_contracts.fixtures import request_fixture,response_fixture,capabilities_fixture
-from resume_contracts.models import AnalysisRequestV2,AnalysisResponseV2,KernelCapabilitiesV1
+from resume_contracts.models import AnalysisRequestV3,AnalysisResponseV3,KernelCapabilitiesV1
 
 
 class ContractTests(unittest.TestCase):
     def test_examples_and_scenarios(self):
-        AnalysisRequestV2.model_validate_json(request_fixture().model_dump_json())
+        AnalysisRequestV3.model_validate_json(request_fixture().model_dump_json())
         for scenario in ["success","low_match","failed","budget_exhausted","invalid_reference","incomplete"]:
-            AnalysisResponseV2.model_validate(response_fixture(scenario=scenario))
+            AnalysisResponseV3.model_validate(response_fixture(scenario=scenario))
     def test_reject_business_actions(self):
-        with self.assertRaises(ValidationError):AnalysisResponseV2.model_validate(response_fixture(scenario="invalid_schema"))
+        with self.assertRaises(ValidationError):AnalysisResponseV3.model_validate(response_fixture(scenario="invalid_schema"))
     def test_duplicate_pool(self):
-        payload=request_fixture().model_dump();payload["scope"]["jobs"][1]=payload["scope"]["jobs"][0]
-        with self.assertRaises(ValidationError):AnalysisRequestV2.model_validate(payload)
+        payload=request_fixture().model_dump();payload["scope"]["jobs"].append(payload["scope"]["jobs"][0])
+        with self.assertRaises(ValidationError):AnalysisRequestV3.model_validate(payload)
+    def test_only_one_application_standard_and_bounded_tag_dictionary(self):
+        from copy import deepcopy
+        request = request_fixture().model_dump()
+        other = deepcopy(request["scope"]["jobs"][0]); other["ref"] = "unapplied-software"
+        request["scope"]["jobs"].append(other)
+        with self.assertRaises(ValidationError): AnalysisRequestV3.model_validate(request)
+        response = response_fixture(); response["matches"].append(deepcopy(response["matches"][0]))
+        with self.assertRaises(ValidationError): AnalysisResponseV3.model_validate(response)
+        request = request_fixture().model_dump()
+        request["protocol_version"] = "resume-analysis/v2"
+        with self.assertRaises(ValidationError): AnalysisRequestV3.model_validate(request)
+        request = request_fixture().model_dump()
+        tag = dict(code="cad", name="三维设计", category="skill", description="原文证实建模经历")
+        request["scope"]["tag_catalog"] = [tag, tag]
+        with self.assertRaises(ValidationError): AnalysisRequestV3.model_validate(request)
     def test_internal_versions_can_evolve_without_sdk_upgrade(self):
         request = request_fixture().model_dump()
         request["pin"].update(toolset_version="tools/2027.5", instruction_version="prompt/a17", policy_version="policy/new")
-        parsed = AnalysisRequestV2.model_validate(request)
-        self.assertEqual(AnalysisResponseV2.model_validate(response_fixture(parsed)).pin, parsed.pin)
+        parsed = AnalysisRequestV3.model_validate(request)
+        self.assertEqual(AnalysisResponseV3.model_validate(response_fixture(parsed)).pin, parsed.pin)
         capabilities_fixture(toolset_version="tools/2027.5", instruction_version="prompt/a17")
     def test_public_contract_and_nonempty_pins_remain_strict(self):
         for key in ("protocol_version", "result_schema_version"):
             payload=request_fixture().model_dump();payload["pin"][key]="unsupported/v99"
-            with self.assertRaises(ValidationError):AnalysisRequestV2.model_validate(payload)
+            with self.assertRaises(ValidationError):AnalysisRequestV3.model_validate(payload)
         for key in ("toolset_version", "instruction_version", "policy_version"):
             payload=request_fixture().model_dump();payload["pin"][key]=" "
-            with self.assertRaises(ValidationError):AnalysisRequestV2.model_validate(payload)
+            with self.assertRaises(ValidationError):AnalysisRequestV3.model_validate(payload)
 
 
 class TextContractTests(unittest.TestCase):
@@ -40,7 +55,7 @@ class TextContractTests(unittest.TestCase):
         self.assertEqual(len(text.lines()), 6)
 
     def test_reject_old_protocol_signed_artifact_tampered_and_oversize_text(self):
-        from resume_contracts.models import AnalysisRequestV2
+        from resume_contracts.models import AnalysisRequestV3
         import hashlib
         base = request_fixture().model_dump()
         from copy import deepcopy
@@ -53,7 +68,7 @@ class TextContractTests(unittest.TestCase):
             variants.append(payload)
         tampered = deepcopy(base); tampered["scope"]["resume_text"]["pages"] = ["changed"]; variants.append(tampered)
         for payload in variants:
-            with self.assertRaises(ValidationError): AnalysisRequestV2.model_validate(payload)
+            with self.assertRaises(ValidationError): AnalysisRequestV3.model_validate(payload)
 
 
 class ConsumerBundleTests(unittest.TestCase):
