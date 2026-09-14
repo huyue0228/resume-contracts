@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "resume-contracts"
-version = "3.0.0"
+version = "3.1.0"
 requires-python = ">=3.9"
 dependencies = ["pydantic>=2.9,<3"]
 
@@ -12,4 +12,4 @@ dependencies = ["pydantic>=2.9,<3"]
 resume-kernel-mock = "resume_contracts.mock_server:main"
 
 [tool.setuptools.package-data]
-resume_contracts = ["bundle/*.json"]
+resume_contracts = ["bundle/*.json", "bundle/*.txt", "allocation_cases.json"]

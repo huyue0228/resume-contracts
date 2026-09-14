@@ -1,5 +1,6 @@
 """简历分析公开协议。这里不定义招聘准入或业务动作。"""
 import hashlib
+import json
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -259,3 +260,169 @@ class AnalysisResponseV3(StrictModel):
     matches: list[JobMatchV1] = Field(max_length=1)
     manifest: TaskManifestV1
     safe_trace: TaskSafeTraceV1
+
+
+# Allocation contains references and verified facts only. No resume or free text.
+ALLOCATION_PROTOCOL = "resume-allocation/v1"
+ALLOCATION_RESULT = "resume-allocation-plan/v1"
+AllocationRef = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$")]
+AllocationHash = Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")]
+AllocationNumber = Annotated[int, Field(ge=0, le=9007199254740991)]
+AllocationTime = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?Z$")]
+
+
+class AllocationPin(StrictModel):
+    pin_id: AllocationRef
+    kernel_build: AllocationRef
+    protocol_version: Literal[ALLOCATION_PROTOCOL] = ALLOCATION_PROTOCOL
+    result_schema_version: Literal[ALLOCATION_RESULT] = ALLOCATION_RESULT
+    toolset_version: AllocationRef
+    policy_version: Literal["allocation-order/v1"] = "allocation-order/v1"
+    instruction_version: Literal["allocation-deterministic/v1"] = "allocation-deterministic/v1"
+
+
+class AllocationCapabilities(StrictModel):
+    protocol_version: Literal[ALLOCATION_PROTOCOL] = ALLOCATION_PROTOCOL
+    result_schema_version: Literal[ALLOCATION_RESULT] = ALLOCATION_RESULT
+    task_kinds: list[Literal["pool.candidate_allocation"]]
+    execution_modes: list[Literal["deterministic"]]
+    kernel_build: AllocationRef
+    toolset_version: AllocationRef
+    policy_version: Literal["allocation-order/v1"] = "allocation-order/v1"
+    instruction_version: Literal["allocation-deterministic/v1"] = "allocation-deterministic/v1"
+    tool_names: list[AllocationRef] = Field(min_length=6, max_length=6)
+    mock: bool = False
+
+
+class AllocationTag(StrictModel):
+    code: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
+    status: Literal["supported", "needs_verification"]
+    confidence_bps: int = Field(ge=0, le=10000)
+    source: Literal["model", "manual"]
+    assertion_ref: AllocationRef
+    verified: Literal[True]
+
+
+class AllocationMember(StrictModel):
+    member_id: AllocationNumber
+    candidate_ref: AllocationRef
+    application_ref: AllocationRef
+    qualification_ref: AllocationRef
+    qualification_revision: AllocationNumber
+    member_revision: AllocationNumber
+    workflow_revision: AllocationNumber
+    source_revision: AllocationNumber
+    standard_ref: AllocationRef
+    standard_hash: AllocationHash
+    tags_hash: AllocationHash
+    admitted: Literal[True]
+    created_at: AllocationTime
+    tags: list[AllocationTag] = Field(max_length=200)
+    allowed_demand_ids: list[AllocationNumber] = Field(max_length=200)
+    counted_demand_ids: list[AllocationNumber] = Field(max_length=200)
+
+
+class AllocationDemand(StrictModel):
+    demand_id: AllocationNumber
+    department_ref: AllocationRef
+    revision: AllocationNumber
+    reception_state: Literal["receiving", "paused", "closed"]
+    required_tags: list[AllocationRef] = Field(max_length=200)
+    preferred_tags: list[AllocationRef] = Field(max_length=200)
+    priority: int = Field(ge=0, le=999)
+    recent_supply_count: AllocationNumber
+    last_allocation_sequence: AllocationNumber
+
+
+class AllocationSnapshot(StrictModel):
+    snapshot_id: AllocationRef
+    snapshot_at: AllocationTime
+    scope_ref: AllocationRef
+    entity_ref: AllocationRef
+    pool_ref: AllocationRef
+    scope_revision: AllocationNumber
+    policy_revision: AllocationNumber
+    epoch: AllocationNumber
+    next_sequence: AllocationNumber
+    window_seconds: Literal[604800] = 604800
+    members: list[AllocationMember] = Field(min_length=1, max_length=100)
+    demands: list[AllocationDemand] = Field(max_length=200)
+
+    @model_validator(mode="after")
+    def unique_references(self):
+        datetime.fromisoformat(self.snapshot_at.replace('Z','+00:00'))
+        for member in self.members:
+            datetime.fromisoformat(member.created_at.replace('Z','+00:00'))
+            if member.tags_hash != allocation_tags_hash([tag.model_dump() for tag in member.tags]):
+                raise ValueError('allocation tag version hash mismatch')
+        for items in ([m.member_id for m in self.members], [m.candidate_ref for m in self.members],
+                      [d.demand_id for d in self.demands]):
+            if len(set(items)) != len(items):
+                raise ValueError("duplicate allocation reference")
+        demand_ids = {d.demand_id for d in self.demands}
+        for m in self.members:
+            if len(set(m.allowed_demand_ids)) != len(m.allowed_demand_ids) or not set(m.allowed_demand_ids) <= demand_ids:
+                raise ValueError("invalid allowed demand references")
+            if len(set(m.counted_demand_ids)) != len(m.counted_demand_ids) or not set(m.counted_demand_ids) <= demand_ids:
+                raise ValueError("invalid counted demand references")
+            if len({t.code for t in m.tags}) != len(m.tags):
+                raise ValueError("duplicate tag assertion")
+        for d in self.demands:
+            if any(len(set(tags)) != len(tags) for tags in (d.required_tags, d.preferred_tags)):
+                raise ValueError("duplicate demand tag")
+        return self
+
+
+class AllocationBudget(StrictModel):
+    max_duration_seconds: int = Field(default=30, ge=1, le=30)
+    max_tool_calls: int = Field(default=16, ge=1, le=16)
+
+
+class AllocationRequest(StrictModel):
+    protocol_version: Literal[ALLOCATION_PROTOCOL] = ALLOCATION_PROTOCOL
+    task_kind: Literal["pool.candidate_allocation"] = "pool.candidate_allocation"
+    execution_mode: Literal["deterministic"] = "deterministic"
+    task_id: AllocationRef
+    idempotency_key: AllocationRef
+    pin: AllocationPin
+    snapshot_hash: AllocationHash
+    snapshot: AllocationSnapshot
+    budget: AllocationBudget = Field(default_factory=AllocationBudget)
+
+
+class AllocationDecision(StrictModel):
+    member_id: AllocationNumber
+    qualification_ref: AllocationRef
+    action: Literal["assign", "wait"]
+    demand_id: AllocationNumber
+    department_ref: str = Field(pattern=r"^([A-Za-z0-9][A-Za-z0-9_.:/-]{0,127})?$")
+    matched_tags: list[AllocationRef] = Field(max_length=200)
+    assertion_refs: list[AllocationRef] = Field(max_length=200)
+    # [-preferred hits, priority, recent+provisional, last sequence, demand ID]
+    order: list[int] = Field(max_length=5)
+    sequence: AllocationNumber
+    reason_code: Literal["allocated", "no_active_mapping", "no_receiving_demand", "required_tags_unavailable"]
+
+
+class AllocationTrace(StrictModel):
+    tool_names: list[AllocationRef] = Field(max_length=16)
+    tool_call_count: int = Field(ge=0, le=16)
+    duration_ms: AllocationNumber
+    reused: bool
+
+
+class AllocationResponse(StrictModel):
+    protocol_version: Literal[ALLOCATION_PROTOCOL] = ALLOCATION_PROTOCOL
+    result_schema_version: Literal[ALLOCATION_RESULT] = ALLOCATION_RESULT
+    task_id: AllocationRef
+    idempotency_key: AllocationRef
+    pin: AllocationPin
+    snapshot_hash: AllocationHash
+    terminal_state: Literal["DONE"] = "DONE"
+    decisions: list[AllocationDecision] = Field(min_length=1, max_length=100)
+    safe_trace: AllocationTrace
+
+
+def allocation_tags_hash(tags):
+    raw=json.dumps(sorted(tags,key=lambda tag:tag['code']),ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
+    return hashlib.sha256(raw).hexdigest()

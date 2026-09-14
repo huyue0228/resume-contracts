@@ -6,7 +6,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .fixtures import response_fixture, capabilities_fixture
-from .models import AnalysisRequestV3
+from .models import AnalysisRequestV3, AllocationRequest
+from .allocation import allocation_capabilities, allocation_response
 
 
 def main():
@@ -26,23 +27,25 @@ def main():
             self.send_header("Content-Length",str(len(raw)));self.end_headers();self.wfile.write(raw)
         def do_GET(self):
             if self.path=="/healthz":return self.reply(200,dict(ok=True,mock=True,build=args.build))
-            if self.path!="/v2/capabilities":return self.reply(404,{})
+            if self.path not in ("/v2/capabilities","/v2/allocation/capabilities"):return self.reply(404,{})
             if not hmac.compare_digest(self.headers.get("X-Agent-Kernel-Token",""),args.token):return self.reply(401,{"code":"kernel_unauthorized"})
-            self.reply(200,capabilities.model_dump(mode="json"))
+            self.reply(200,(allocation_capabilities(kernel_build=args.build,mock=True) if self.path.startswith("/v2/allocation/") else capabilities).model_dump(mode="json"))
         def do_POST(self):
-            if self.path!="/v2/tasks/execute":return self.reply(404,{})
+            if self.path not in ("/v2/tasks/execute","/v2/allocation/tasks/execute"):return self.reply(404,{})
             if not hmac.compare_digest(self.headers.get("X-Agent-Kernel-Token",""),args.token):return self.reply(401,{"code":"kernel_unauthorized"})
             try:
                 size=int(self.headers.get("Content-Length","0"))
                 if size<1 or size>2<<20:return self.reply(413,{})
-                request=AnalysisRequestV3.model_validate_json(self.rfile.read(size))
+                is_allocation=self.path.startswith("/v2/allocation/")
+                request=(AllocationRequest if is_allocation else AnalysisRequestV3).model_validate_json(self.rfile.read(size))
             except (ValueError,TypeError):return self.reply(422,{"code":"invalid_envelope"})
-            if any(getattr(request.pin,key)!=getattr(capabilities,key) for key in ("kernel_build","toolset_version","instruction_version")):
+            if any(getattr(request.pin,key)!=getattr(allocation_capabilities(kernel_build=args.build) if is_allocation else capabilities,key) for key in ("kernel_build","toolset_version","instruction_version")):
                 return self.reply(409,{"code":"kernel_version_unavailable"})
             if args.scenario=="timeout":
                 time.sleep(2)
                 return self.reply(504,{"code":"llm_timeout"})
-            self.reply(200,response_fixture(request,args.scenario))
+            if is_allocation and args.scenario in ("failed","budget_exhausted"):return self.reply(422,{"code":"allocation_failed"})
+            self.reply(200,allocation_response(request,args.scenario) if is_allocation else response_fixture(request,args.scenario))
     print(f"MOCK ONLY: http://{args.host}:{args.port} scenario={args.scenario}",flush=True)
     ThreadingHTTPServer((args.host,args.port),Handler).serve_forever()
 
