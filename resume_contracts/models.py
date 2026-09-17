@@ -7,7 +7,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from typing_extensions import Annotated
 
-PROTOCOL = "resume-analysis/v3"
+PROTOCOL = "resume-analysis/v4"
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
 MAX_TEXT_BYTES = 1024 * 1024
 MAX_PAGES = 100
@@ -117,12 +117,6 @@ class JobRequirementV1(StrictModel):
     department_name: str = ""
 
 
-class MajorAliasV1(StrictModel):
-    name: str
-    category: str
-    match_type: str
-
-
 class AbilityTagV1(StrictModel):
     code: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     name: str = Field(min_length=1, max_length=100)
@@ -130,13 +124,12 @@ class AbilityTagV1(StrictModel):
     description: str = Field(min_length=1, max_length=1000)
 
 
-class AnalysisScopeV3(StrictModel):
+class AnalysisScopeV4(StrictModel):
     candidate: CandidateContextV1
     volunteer_ref: str = Field(min_length=1, max_length=128)
     resume_text: ResumeTextV2
     # Exactly one application standard, independent of department demand and HC.
     jobs: list[JobRequirementV1] = Field(min_length=1, max_length=1)
-    taxonomy: list[MajorAliasV1] = Field(default_factory=list)
     tag_catalog: list[AbilityTagV1] = Field(default_factory=list, max_length=200)
 
     @model_validator(mode="after")
@@ -148,7 +141,7 @@ class AnalysisScopeV3(StrictModel):
         return self
 
 
-class AnalysisRequestV3(StrictModel):
+class AnalysisRequestV4(StrictModel):
     protocol_version: Literal[PROTOCOL] = PROTOCOL
     task_kind: Literal["candidate.application_assessment"] = "candidate.application_assessment"
     task_id: str = Field(min_length=1, max_length=128)
@@ -156,7 +149,7 @@ class AnalysisRequestV3(StrictModel):
     trigger: str = "processing_run"
     workflow_revision: int = Field(ge=0)
     pin: TaskPinV1
-    scope: AnalysisScopeV3
+    scope: AnalysisScopeV4
     model: ModelConfigV1
     budget: TaskBudgetV1 = Field(default_factory=TaskBudgetV1)
 
@@ -250,7 +243,7 @@ class TaskSafeTraceV1(StrictModel):
     status: str = Field(default="", max_length=32)
 
 
-class AnalysisResponseV3(StrictModel):
+class AnalysisResponseV4(StrictModel):
     protocol_version: Literal[PROTOCOL] = PROTOCOL
     task_id: str
     idempotency_key: str

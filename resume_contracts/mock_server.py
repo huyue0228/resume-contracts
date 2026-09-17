@@ -6,7 +6,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .fixtures import response_fixture, capabilities_fixture
-from .models import AnalysisRequestV3, AllocationRequest
+from .models import AnalysisRequestV4, AllocationRequest
 from .allocation import allocation_capabilities, allocation_response
 
 
@@ -37,7 +37,7 @@ def main():
                 size=int(self.headers.get("Content-Length","0"))
                 if size<1 or size>2<<20:return self.reply(413,{})
                 is_allocation=self.path.startswith("/v2/allocation/")
-                request=(AllocationRequest if is_allocation else AnalysisRequestV3).model_validate_json(self.rfile.read(size))
+                request=(AllocationRequest if is_allocation else AnalysisRequestV4).model_validate_json(self.rfile.read(size))
             except (ValueError,TypeError):return self.reply(422,{"code":"invalid_envelope"})
             if any(getattr(request.pin,key)!=getattr(allocation_capabilities(kernel_build=args.build) if is_allocation else capabilities,key) for key in ("kernel_build","toolset_version","instruction_version")):
                 return self.reply(409,{"code":"kernel_version_unavailable"})
