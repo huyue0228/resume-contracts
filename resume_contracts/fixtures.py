@@ -2,7 +2,7 @@
 import hashlib
 import json
 
-from .models import AnalysisRequestV4, AnalysisResponseV4, KernelCapabilitiesV1, PROTOCOL, SCORE_WEIGHTS
+from .models import AnalysisRequestV5, AnalysisResponseV5, KernelCapabilitiesV1, PROTOCOL, SCORE_WEIGHTS
 
 TEXT = "负责后端服务开发与测试工作，完成接口设计和自动化测试。\n" * 20
 
@@ -16,7 +16,7 @@ def capabilities_fixture(**overrides):
 
 
 def request_fixture():
-    return AnalysisRequestV4.model_validate(dict(task_id="fixture-task", idempotency_key="fixture-key", workflow_revision=1,
+    return AnalysisRequestV5.model_validate(dict(task_id="fixture-task", idempotency_key="fixture-key", workflow_revision=1,
         pin=dict(pin_id="fixture-pin", kernel_build="dev", model_config_revision="fixture-model",
                  toolset_version="fixture-tools/v1", instruction_version="fixture-instructions/v1",
                  policy_version="fixture-policy/v1"),
@@ -45,7 +45,7 @@ def response_fixture(request=None, scenario="success"):
     if scenario in {"failed", "budget_exhausted"}:
         data.update(profile=None,matches=[])
         data["manifest"].update(terminal_state="FAILED",covered_jobs=[],failure_code=scenario)
-    result=AnalysisResponseV4.model_validate(data).model_dump(mode="json")
+    result=AnalysisResponseV5.model_validate(data).model_dump(mode="json")
     if scenario == "invalid_reference": result["matches"][0]["job_ref"]="outside-allowed-pool"
     if scenario == "incomplete": result["matches"]=result["matches"][:-1]
     if scenario == "invalid_schema": result["recommendation"]="dispatch"

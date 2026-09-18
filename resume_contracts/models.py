@@ -7,7 +7,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from typing_extensions import Annotated
 
-PROTOCOL = "resume-analysis/v4"
+PROTOCOL = "resume-analysis/v5"
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
 MAX_TEXT_BYTES = 1024 * 1024
 MAX_PAGES = 100
@@ -48,6 +48,7 @@ class TaskBudgetV1(StrictModel):
     max_tool_calls: int = Field(default=256, ge=1, le=512)
     max_duration_seconds: int = Field(default=600, ge=1, le=1800)
     max_tokens: int = Field(default=120000, ge=1, le=1000000)
+    max_context_tokens: int = Field(default=32768, ge=1024, le=1000000)
 
 
 class ModelConfigV1(StrictModel):
@@ -124,7 +125,7 @@ class AbilityTagV1(StrictModel):
     description: str = Field(min_length=1, max_length=1000)
 
 
-class AnalysisScopeV4(StrictModel):
+class AnalysisScopeV5(StrictModel):
     candidate: CandidateContextV1
     volunteer_ref: str = Field(min_length=1, max_length=128)
     resume_text: ResumeTextV2
@@ -141,7 +142,7 @@ class AnalysisScopeV4(StrictModel):
         return self
 
 
-class AnalysisRequestV4(StrictModel):
+class AnalysisRequestV5(StrictModel):
     protocol_version: Literal[PROTOCOL] = PROTOCOL
     task_kind: Literal["candidate.application_assessment"] = "candidate.application_assessment"
     task_id: str = Field(min_length=1, max_length=128)
@@ -149,7 +150,7 @@ class AnalysisRequestV4(StrictModel):
     trigger: str = "processing_run"
     workflow_revision: int = Field(ge=0)
     pin: TaskPinV1
-    scope: AnalysisScopeV4
+    scope: AnalysisScopeV5
     model: ModelConfigV1
     budget: TaskBudgetV1 = Field(default_factory=TaskBudgetV1)
 
@@ -228,6 +229,43 @@ class TaskToolTraceV1(StrictModel):
     status: str = Field(max_length=64)
     duration_ms: int = Field(ge=0)
     item_count: int = Field(ge=0)
+    error_code: str = Field(default="", max_length=64)
+    error_field: str = Field(default="", max_length=200)
+    repeated: bool = False
+
+
+class TaskRoundTraceV1(StrictModel):
+    turn: int = Field(ge=1, le=64)
+    phase: Literal["analysis", "finalize"]
+    estimated_input_tokens: int = Field(ge=0)
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    output_limit: int = Field(ge=0)
+    remaining_tokens: int = Field(ge=0)
+    reserved_tokens: int = Field(ge=0)
+    model_duration_ms: int = Field(ge=0)
+    usage_source: Literal["reported", "estimated", "mixed"]
+    transport_attempts: int = Field(ge=1, le=6)
+    progress: bool = False
+    compacted: bool = False
+
+
+class TaskBudgetTraceV1(StrictModel):
+    max_tokens: int = Field(ge=1)
+    max_context_tokens: int = Field(ge=1024)
+    max_turns: int = Field(ge=1, le=64)
+    max_tool_calls: int = Field(ge=1, le=512)
+    remaining_tokens: int = Field(ge=0)
+    next_input_tokens: int = Field(default=0, ge=0)
+    reserved_tokens: int = Field(default=0, ge=0)
+    stop_reason: Literal["", "token_limit", "next_request", "context_limit", "turn_limit", "tool_limit", "no_progress", "invalid_output", "materials_incomplete", "model_error", "cancelled", "timeout"] = ""
+    tokenizer: str = Field(default="", max_length=64)
+    usage_source: Literal["reported", "estimated", "mixed"] = "estimated"
+    compactions: int = Field(default=0, ge=0)
+    repeated_calls: int = Field(default=0, ge=0)
+    format_repairs: int = Field(default=0, ge=0)
+    validation_failures: int = Field(default=0, ge=0)
+    transport_retries: int = Field(default=0, ge=0)
 
 
 class TaskSafeTraceV1(StrictModel):
@@ -241,9 +279,11 @@ class TaskSafeTraceV1(StrictModel):
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
     status: str = Field(default="", max_length=32)
+    budget: Optional[TaskBudgetTraceV1] = None
+    rounds: list[TaskRoundTraceV1] = Field(default_factory=list, max_length=64)
 
 
-class AnalysisResponseV4(StrictModel):
+class AnalysisResponseV5(StrictModel):
     protocol_version: Literal[PROTOCOL] = PROTOCOL
     task_id: str
     idempotency_key: str

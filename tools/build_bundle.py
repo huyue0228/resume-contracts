@@ -12,7 +12,7 @@ from resume_contracts.models import AllocationRequest, AllocationResponse, Alloc
 from resume_contracts.allocation import allocation_request, allocation_response, allocation_capabilities, canonical_snapshot
 from allocation_codegen import generate
 import subprocess
-from resume_contracts.models import AnalysisRequestV4,AnalysisResponseV4,KernelCapabilitiesV1
+from resume_contracts.models import AnalysisRequestV5,AnalysisResponseV5,KernelCapabilitiesV1
 from resume_contracts.fixtures import request_fixture,response_fixture,capabilities_fixture
 
 
@@ -20,7 +20,7 @@ def render(value):return (json.dumps(value,ensure_ascii=False,sort_keys=True,ind
 
 
 def bundle():
-    result={"request.schema.json":render(AnalysisRequestV4.model_json_schema()),"response.schema.json":render(AnalysisResponseV4.model_json_schema()),
+    result={"request.schema.json":render(AnalysisRequestV5.model_json_schema()),"response.schema.json":render(AnalysisResponseV5.model_json_schema()),
             "request.example.json":render(request_fixture().model_dump(mode="json")),"response.example.json":render(response_fixture()),
             "capabilities.schema.json":render(KernelCapabilitiesV1.model_json_schema()),
             "capabilities.example.json":render(capabilities_fixture().model_dump(mode="json"))}

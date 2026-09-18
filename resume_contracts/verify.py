@@ -2,7 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
-from .models import AnalysisRequestV4, AnalysisResponseV4, KernelCapabilitiesV1, AllocationRequest, AllocationResponse, AllocationCapabilities
+from .models import AnalysisRequestV5, AnalysisResponseV5, KernelCapabilitiesV1, AllocationRequest, AllocationResponse, AllocationCapabilities
 
 
 def verify():
@@ -13,7 +13,7 @@ def verify():
         if hashlib.sha256((bundle/name).read_bytes()).hexdigest()!=digest:raise ValueError(f"contract drift: {name}")
     for name,digest in manifest["python"].items():
         if hashlib.sha256((root/name).read_bytes()).hexdigest()!=digest:raise ValueError(f"SDK drift: {name}")
-    for name,model in [("request",AnalysisRequestV4),("response",AnalysisResponseV4),("capabilities",KernelCapabilitiesV1),("allocation.request",AllocationRequest),("allocation.response",AllocationResponse),("allocation.capabilities",AllocationCapabilities)]:
+    for name,model in [("request",AnalysisRequestV5),("response",AnalysisResponseV5),("capabilities",KernelCapabilitiesV1),("allocation.request",AllocationRequest),("allocation.response",AllocationResponse),("allocation.capabilities",AllocationCapabilities)]:
         if model.model_json_schema()!=json.loads((bundle/f"{name}.schema.json").read_text()):raise ValueError(f"schema drift: {name}")
         model.model_validate_json((bundle/f"{name}.example.json").read_text())
     return manifest["version"]
